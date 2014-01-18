@@ -1,0 +1,15 @@
+LIBRARY portaudio_x86.dll
+EXPORTS
+Pa_Initialize
+Pa_GetDeviceInfo
+Pa_GetErrorText
+Pa_OpenStream
+Pa_OpenDefaultStream
+Pa_GetStreamInfo
+Pa_CloseStream
+Pa_Terminate
+Pa_StartStream
+Pa_StopStream
+Pa_AbortStream
+Pa_IsStreamActive
+Pa_GetDeviceCount
