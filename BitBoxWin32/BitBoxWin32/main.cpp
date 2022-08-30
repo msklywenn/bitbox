@@ -514,6 +514,7 @@ void fs_beam(int t)
 		h = 0;
 	//GFX_POLY_FORMAT = LIGHT0|POLYFRONT|ALPHA(15);
 	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE);
 	spot(RGB15(0, 31, 4), RGB15(0, 31, 4), -32, h-384);
 }
 
@@ -540,22 +541,32 @@ Drawable demo[] =
 
 int mouseX, mouseY;
 
+void fullScreenQuad(float r, float g, float b, float a)
+{
+	glDisable(GL_DEPTH_TEST);
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	glBegin(GL_QUAD_STRIP);
+	glColor4f(r,g,b,a);
+	glVertex3f(-1.0f,-20.0f, -0.5f);
+	glVertex3f( 1.0f,-20.0f, -0.5f);
+	glVertex3f(-1.0f,20.0f, -0.5f);
+	glVertex3f( 1.0f,20.0f, -0.5f);
+	glEnd();
+	glEnable(GL_DEPTH_TEST);
+}
+
+int last_t = -1;
 void Render(int t)
 {
 	if ( t < 2576 ) {
-		if ( fade_current < fade_target )
-			fade_current++;
-		else if ( fade_current > fade_target )
-			fade_current--;
-
-		//int v = 0;
-		//if ( fade_current < (16 << 2) )
-		//	v = DARK | (16 - (fade_current >> 2));
-		//else if ( fade_current > (16 << 2) )
-		//	v = BRIGHT | ((fade_current >> 2) - 16);
-
-		//REG_MASTER_BRIGHT = v;
-		//REG_MASTER_BRIGHT_SUB = v;
+		if (last_t < t){
+			if ( fade_current < fade_target )
+				fade_current++;
+			else if ( fade_current > fade_target )
+				fade_current--;
+			last_t = t;
+		}
 
 		identity();
 
@@ -580,6 +591,12 @@ void Render(int t)
 				pop();
 			}
 		}
+
+		if ( fade_current < (16 << 2) )
+			fullScreenQuad(0,0,0,(16 - (fade_current >> 2))/16.0f);
+		else if ( fade_current > (16 << 2) )
+			fullScreenQuad(1,1,1,((fade_current >> 2) - 16)/16.0f);
+
 	}
 }
 
@@ -661,7 +678,7 @@ int main(int argc, char ** argv)
 		Render(t);
 		Render(t+1);
 
-		fprintf(stderr, "t=%6d r=%6d\n", t, synth->getCurrentRow());
+		fprintf(stderr, "t=%6d r=%6d f=%3d\n", t, synth->getCurrentRow(), fade_current);
 	}
 
 	delete synth;
