@@ -18,30 +18,6 @@
 
 #include "plop.h"
 
-uint32_t timer(uint32_t interval, void * param)
-{
-	Synth * synth = (Synth *) param;
-
-	static int lastRow = -42;
-	int currentRow = synth->getCurrentRow();
-	if ( currentRow != lastRow ) {
-		lastRow = currentRow;
-	}
-
-	// Detect end of song and stop synth
-	int end = 0;
-	for ( int i = 0 ; i < 8 ; i++ )
-		if ( currentRow > synth->getTune()->channels[i].lastRow 
-				&& synth->getVolume(i) == 0 )
-			end++;
-		else
-			break;
-	if ( end == 8 )
-		synth->stop(false);
-
-	return interval;
-}
-
 void InitVideo()
 {	
 	glClearColor(0, 0, 0, 1.0f);
@@ -560,19 +536,19 @@ int last_t = -1;
 void Render(int t)
 {
 	if ( t < 2576 ) {
-		if (last_t < t){
+		while (last_t < t) {
 			if ( fade_current < fade_target )
 				fade_current++;
 			else if ( fade_current > fade_target )
 				fade_current--;
-			last_t = t;
+			last_t++;
 		}
 
 		identity();
 
 		// Dual screen 3D
 		if ( t&1 ) {
-			int y = (HEIGHT/2 - 384/2 - 96/2, 0);
+			int y = HEIGHT/2 - 384/2 - 96/2;
 			glViewport(WIDTH/2 - 256/2, y, 255, 191);
 		} else {
 			translate(0, -5*4096, 0);
@@ -582,7 +558,7 @@ void Render(int t)
 
 		// Lightweight 3D player -olol
 		int i;
-		for ( i = 0 ; i < sizeof(demo)/sizeof(Drawable) ; i++ ) {
+		for ( i = 0 ; i < (int)(sizeof(demo)/sizeof(Drawable)) ; i++ ) {
 			if ( t >= demo[i].start && t < demo[i].end ) {
 				push();
 					translate(0, demo[i].ty*1024, demo[i].tz*1024);
@@ -617,15 +593,13 @@ int main(int argc, char ** argv)
 	SDL_WM_SetCaption("BitBox - Winport", "BitBox - Winport");
 
 	SDL_Event event;
-	uint32_t start = SDL_GetTicks();
 #else
 	debug_init_isviewer();
 	debug_init_usblog();
 	display_init(RESOLUTION_640x480, DEPTH_16_BPP, 1,
 			GAMMA_NONE, ANTIALIAS_RESAMPLE_FETCH_ALWAYS);
 	gl_init();
-	timer_init();
-	long long start = timer_ticks();
+	audio_init(44100, 4);
 #endif
 
 	InitVideo();
@@ -635,6 +609,23 @@ int main(int argc, char ** argv)
 
 	Synth* synth = new Synth(tune);
 	synth->play();	
+
+#ifndef USE_SDL
+	while (audio_can_write())
+	{
+		short* buf = audio_write_begin();
+		synth->synth(buf, audio_get_buffer_length());
+		audio_write_end();
+	}
+#endif
+
+#ifdef USE_SDL
+	uint32_t start = SDL_GetTicks();
+#else
+
+	timer_init();
+	long long start = timer_ticks();
+#endif
 
 	bool running = true;
 	long long t = 0;
@@ -668,18 +659,31 @@ int main(int argc, char ** argv)
 
 		t = (now - start) / 16;
 #else
-		gl_swap_buffers();
+		//gl_swap_buffers();
 
 		long long now = timer_ticks();
 		t = TIMER_MICROS_LL(now - start) / 1000 / 16; 
 #endif
-		glClear(GL_DEPTH_BUFFER_BIT|GL_COLOR_BUFFER_BIT);
+	/*	glClear(GL_DEPTH_BUFFER_BIT|GL_COLOR_BUFFER_BIT);
 
 		Render(t);
 		Render(t+1);
-
-		fprintf(stderr, "t=%6d r=%6d f=%3d\n", t, synth->getCurrentRow(), fade_current);
+*/
+#ifndef USE_SDL
+		while (audio_can_write())
+		{
+			long long s = timer_ticks();
+			short* buf = audio_write_begin();
+			int samples = audio_get_buffer_length();
+			synth->synth(buf, samples);
+			audio_write_end();
+			long long e = timer_ticks();
+			fprintf(stderr, "audio: %d samples in %f ms\n", samples, TIMER_MICROS_LL(e - s) / 1000.0f);
+		}
+#endif
 	}
+
+	printf("%lld\n",t);
 
 	delete synth;
 	delete tune;
