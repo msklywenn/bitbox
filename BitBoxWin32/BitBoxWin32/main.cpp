@@ -1,20 +1,24 @@
+#if defined(USE_SDL)
 #include <SDL.h>
-#include <windows.h>
+#else
+#include <libdragon.h>
+#include <GL/gl_integration.h>
+#endif
+
+#include <stdio.h>
+
 #include <GL/gl.h>
 #include "trig.h"
-#include "glext.h"
 
 #include "tune.h"
 #include "synth.h"
 
-#ifdef _WINDOWS
-#include <windows.h>
-#endif
+#define WIDTH 640
+#define HEIGHT 480
 
-#define WIDTH 800
-#define HEIGHT 600
+#include "plop.h"
 
-Uint32 timer(Uint32 interval, void * param)
+uint32_t timer(uint32_t interval, void * param)
 {
 	Synth * synth = (Synth *) param;
 
@@ -38,24 +42,6 @@ Uint32 timer(Uint32 interval, void * param)
 	return interval;
 }
 
-PFNGLCREATESHADERPROC glCreateShader = 0;
-PFNGLCREATEPROGRAMPROC glCreateProgram = 0;
-PFNGLLINKPROGRAMPROC glLinkProgram = 0;
-PFNGLUSEPROGRAMPROC glUseProgram = 0;
-PFNGLDETACHSHADERPROC glDetachShader = 0;
-PFNGLATTACHSHADERPROC glAttachShader = 0;
-PFNGLDELETEPROGRAMPROC glDeleteProgram = 0;
-PFNGLDELETESHADERPROC glDeleteShader = 0;
-PFNGLSHADERSOURCEPROC glShaderSource = 0;
-PFNGLCOMPILESHADERPROC glCompileShader = 0;
-GLuint fsh;
-const GLchar* fshSource = "void main()\
-{\
-	ivec3 i = ivec3(gl_Color * 63.0);\
-	gl_FragColor = vec4(ivec3(vec3(i/63.0) * 31.0) / 31.0, 1.0);\
-}";
-GLuint program;
-
 void InitVideo()
 {	
 	glClearColor(0, 0, 0, 1.0f);
@@ -70,7 +56,7 @@ void InitVideo()
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE);
 
 	glEnable(GL_CULL_FACE);
-	glPolygonMode(GL_FRONT, GL_FILL);
+	glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 	glCullFace(GL_BACK);
 	
 	glMatrixMode(GL_PROJECTION);
@@ -83,45 +69,35 @@ void InitVideo()
 	};
 	glLoadMatrixf(matrix);
 	glMatrixMode(GL_MODELVIEW);
+	glLoadIdentity();
 
-	glColorMaterial(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE);
-	glEnable(GL_COLOR_MATERIAL);
-
+	glEnable(GL_NORMALIZE);
 	glEnable(GL_LIGHTING);
 	glEnable(GL_LIGHT0);
 	static float diffuse[] = { 1.0f, 1.0f, 1.0f, 1.0f };
 	glLightfv(GL_LIGHT0, GL_DIFFUSE, diffuse);
-	static float position[] = { 2.0f, 4.0f, 2.0f };
+	static float position[] = { 96/512.0f, 144/512.0f, 482/512.0f, 0.0f };
 	glLightfv(GL_LIGHT0, GL_POSITION, position);
 
-	glCreateShader = (PFNGLCREATESHADERPROC) wglGetProcAddress("glCreateShader");
-	glCreateProgram = (PFNGLCREATEPROGRAMPROC) wglGetProcAddress("glCreateProgram");
-	glLinkProgram = (PFNGLLINKPROGRAMPROC) wglGetProcAddress("glLinkProgram");
-	glUseProgram = (PFNGLUSEPROGRAMPROC) wglGetProcAddress("glUseProgram");
-	glDetachShader = (PFNGLDETACHSHADERPROC) wglGetProcAddress("glDetachShader");
-	glAttachShader = (PFNGLATTACHSHADERPROC) wglGetProcAddress("glAttachShader");
-	glDeleteProgram = (PFNGLDELETEPROGRAMPROC) wglGetProcAddress("glDeleteProgram");
-	glDeleteShader = (PFNGLDELETESHADERPROC) wglGetProcAddress("glDeleteShader");
-	glShaderSource = (PFNGLSHADERSOURCEPROC) wglGetProcAddress("glShaderSource");
-	glCompileShader = (PFNGLCOMPILESHADERPROC) wglGetProcAddress("glCompileShader");
-
-	fsh = glCreateShader(GL_FRAGMENT_SHADER);
-	glShaderSource(fsh, 1, & fshSource, 0);
-	glCompileShader(fsh);
-	program = glCreateProgram();
-	glAttachShader(program, fsh);
-	glLinkProgram(program);
 }
 
 int fade_current = 31 << 2; // starts white
 int fade_target = 16 << 2;
 
+static float color[4];
+#define difamb(rd,gd,bd,ra,ga,ba) { \
+	color[0]=rd/31.0f;color[1]=gd/31.0f;color[2]=bd/31.0f;color[3]=1;\
+	glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, color); \
+	color[0]=ra/31.0f;color[1]=ga/31.0f;color[2]=ba/31.0f;color[3]=1;\
+	glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT, color); }
+#define color(r,g,b) { \
+	glColor3f(r/31.0f,g/31.0f,b/31.0f); } 
+
 void cube()
 {
-	glUseProgram(program);
-
+	glEnable(GL_LIGHTING);
 	glDisable(GL_BLEND);
-	glColor3f(0.5f, 0.5f, 0.5f);
+	difamb(16,16,16,8,8,8);
 	glBegin(GL_QUADS);
 		glNormal3f(0.0f, 0.0f, 1.0f);
 		glVertex3f(-1.0f, -1.0f,  1.0f);
@@ -159,8 +135,7 @@ void cube()
 		glVertex3f( 1.0f,  1.0f,  1.0f);
 		glVertex3f( 1.0f, -1.0f,  1.0f);
 	glEnd();
-
-	glUseProgram(0);
+	glDisable(GL_LIGHTING);
 }
 
 #define RGB15(r, g, b) ((r)|((g)<<5)|((b)<<10))
@@ -376,10 +351,11 @@ void sonic(int t)
 	glBegin(GL_QUADS);
 	for ( y = -7*64+t ; y < 6*64+t ; y += 64 ) {
 		for ( x = -7*64 ; x < 6*64 ; x += 64 ) {
-			if ( i & 1 )
-				glColor3f(29/31.0f, 15/31.0f, 4/31.0f);
-			else
-				glColor3f(4/31.0f, 11/31.0f, 28/31.0f);
+			if ( i & 1 ) {
+				color(29, 15, 4);
+			}  else {
+				color(4, 11, 28);
+			}
 			glVertex3f(x / 64.0f, f(x, y)/64.0f, y / 64.0f);
 			glVertex3f(x / 64.0f, f(x, y+64)/64.0f, y / 64.0f + 1.0f);
 			glVertex3f(x / 64.0f + 1.0f, f(x+64, y+64)/64.0f, y / 64.0f + 1.0f);
@@ -392,13 +368,13 @@ void sonic(int t)
 
 void spot(int c1, int c2, int w, int h)
 {
-	float c1r = RED(c1)/31.0f, c1g = GREEN(c1)/31.0f, c1b = BLUE(c1)/31.0f;
-	float c2r = RED(c2)/31.0f, c2g = GREEN(c2)/31.0f, c2b = BLUE(c2)/31.0f;
+	float c1r = RED(c1), c1g = GREEN(c1), c1b = BLUE(c1);
+	float c2r = RED(c2), c2g = GREEN(c2), c2b = BLUE(c2);
 	glBegin(GL_QUADS);
-		glColor3f(c1r, c1g, c1b);
+		color(c1r, c1g, c1b);
 		glVertex3f(-1.0f, h/64.0f, 0.0f);
 		glVertex3f(1.0f, h/64.0f, 0.0f);
-		glColor3f(c2r, c2g, c2b);
+		color(c2r, c2g, c2b);
 		glVertex3f(1.0f + w / 64.0f, 1.0f, 0.0f);
 		glVertex3f(-1.0f-w/64.0f, 1.0f, 0.0f);
 	glEnd();
@@ -514,8 +490,9 @@ void fs(int t)
 	glDisable(GL_BLEND);
 	glDisable(GL_CULL_FACE);
 	int i, j;
+	glEnable(GL_LIGHTING);
 	glBegin(GL_QUADS);
-	glColor3f(0.5f, 0.5f, 0.5f);
+	difamb(15,15,15,15,15,15);
 	for ( i = 0 ; i < 8 ; i++ ) {
 		for ( j = 0 ; j < 8192 ; j += 512 ) {
 			glNormal3f(((uber_cos(j) * r[i])>>18) / 64.0f, h[i]/64.0f, ((uber_sin(j) * r[i])>>18)/64.0f);
@@ -526,6 +503,7 @@ void fs(int t)
 		}
 	}
 	glEnd();
+	glDisable(GL_LIGHTING);
 	glEnable(GL_CULL_FACE);
 }
 
@@ -583,10 +561,12 @@ void Render(int t)
 
 		// Dual screen 3D
 		if ( t&1 ) {
-			glViewport(WIDTH/2 - 256/2, HEIGHT/2 - 384/2 - 96/2, 255, 191);
+			int y = (HEIGHT/2 - 384/2 - 96/2, 0);
+			glViewport(WIDTH/2 - 256/2, y, 255, 191);
 		} else {
 			translate(0, -5*4096, 0);
-			glViewport(WIDTH/2 - 256/2, HEIGHT/2 - 384/2 + 192 - 96/2 + 96, 255, 191);
+			int y = HEIGHT/2 - 384/2 + 192 - 96/2 + 96;
+			glViewport(WIDTH/2 - 256/2, y, 255, 191);
 		}
 
 		// Lightweight 3D player -olol
@@ -605,25 +585,8 @@ void Render(int t)
 
 int main(int argc, char ** argv)
 {
-	SDL_Event event;
-	bool running = true;
-	
-	int t = 0;
-
-#ifdef _WINDOWS
-#ifdef _DEBUG
-	AllocConsole();
-//	freopen("CONOUT$", "wb", stderr);
-//	freopen("CONOUT$", "wb", stdout);
-#endif	
-#endif
-
+#if defined(USE_SDL)
 	SDL_Init(SDL_INIT_EVERYTHING);
-
-	Tune * tune = new Tune();
-	Synth * synth = new Synth(tune);
-	if ( ! SDL_AddTimer(100, timer, synth) )
-		return 42;
 
 	SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 16);
 	SDL_GL_SetAttribute(SDL_GL_RED_SIZE, 5);
@@ -632,16 +595,36 @@ int main(int argc, char ** argv)
 	SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
 	//SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, 1);
 	//SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS, 2);
-	SDL_Surface * screen = SDL_SetVideoMode(WIDTH, HEIGHT, 16, SDL_DOUBLEBUF|SDL_HWSURFACE|SDL_OPENGL);
+	SDL_Surface * screen = SDL_SetVideoMode(WIDTH, HEIGHT, 16,
+			SDL_DOUBLEBUF|SDL_HWSURFACE|SDL_OPENGL);
 	SDL_WM_SetCaption("BitBox - Winport", "BitBox - Winport");
+
+	SDL_Event event;
+	uint32_t start = SDL_GetTicks();
+#else
+	debug_init_isviewer();
+	debug_init_usblog();
+	display_init(RESOLUTION_640x480, DEPTH_16_BPP, 1,
+			GAMMA_NONE, ANTIALIAS_RESAMPLE_FETCH_ALWAYS);
+	gl_init();
+	timer_init();
+	long long start = timer_ticks();
+#endif
+
 	InitVideo();
 
+	Tune* tune = new Tune();
+	tune->LoadText(music);
+
+	Synth* synth = new Synth(tune);
 	synth->play();	
-	tune->Load("plop");
 
-	Uint32 start = SDL_GetTicks();
-
+	bool running = true;
+	long long t = 0;
 	while ( running ) {
+#if USE_SDL
+		SDL_GL_SwapBuffers();
+
 		while ( SDL_PollEvent(& event) )
 		{
 			switch ( event.type ) {
@@ -664,28 +647,29 @@ int main(int argc, char ** argv)
 			}
 		}
 
-		Uint32 now = SDL_GetTicks();
+		uint32_t now = SDL_GetTicks();
 
 		t = (now - start) / 16;
+#else
+		gl_swap_buffers();
 
+		long long now = timer_ticks();
+		t = TIMER_MICROS_LL(now - start) / 1000 / 16; 
+#endif
 		glClear(GL_DEPTH_BUFFER_BIT|GL_COLOR_BUFFER_BIT);
 
 		Render(t);
 		Render(t+1);
-	
-		SDL_GL_SwapBuffers();
+
+		fprintf(stderr, "t=%6d r=%6d\n", t, synth->getCurrentRow());
 	}
 
 	delete synth;
 	delete tune;
 
+#if USE_SDL
 	SDL_FreeSurface(screen);
 	SDL_Quit();
-
-#ifdef __WIN32__
-#ifdef _DEBUG
-	FreeConsole();
-#endif
 #endif
 
 	return 0;

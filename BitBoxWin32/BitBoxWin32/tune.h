@@ -13,6 +13,7 @@ struct Tune {
 	// To text format used by the tracker
 	bool Save(const char * filename);
 	bool Load(const char * filename);
+	bool LoadText(const char* txt);
 
 	// To binary format used by the NDS player
 	// XXX FUCKED UP ! XXX

@@ -17,9 +17,9 @@ struct NDSChannel {
 #endif
 
 struct NDSNote {
-	unsigned int time : 13;
-	unsigned int volume : 5;
-	unsigned int frequency : 14;
+	int time : 13;
+	int volume : 5;
+	int frequency : 14;
 #ifdef _WINDOWS
 };
 #else
@@ -119,53 +119,6 @@ bool Tune::Export(const char * filename)
 	return true;
 }
 
-bool Tune::Import(const char * filename)
-{
-	// XXX //
-	return false;
-	// XXX //
-
-	NDSChannel tmpChannel;
-	NDSNote tmpNote;
-
-	FILE * file = fopen(filename, "rb");
-
-	if ( file == 0 )
-		return false;
-
-	fread(& resolution, 2, 1, file);
-	fread(& rpm, 2, 1, file);
-
-	// Reset everything and read channels
-	for ( int i = 0 ; i < 8 ; i++ ) {
-		channels[i].reset();
-		fread(& tmpChannel, sizeof(NDSChannel), 1, file);
-		channels[i].duty = tmpChannel.duty;
-		channels[i].dec = tmpChannel.dec;
-	}
-
-	// Read notes
-	for ( int i = 0 ; i < 8 ; i++ ) {
-		int row = 0;
-		do {
-			fread(& tmpNote, sizeof(NDSNote), 1, file);
-			if ( tmpNote.time != 0 ) {
-				row += (int)((float)(tmpNote.time - 1) / (float)resolution
-					/ 60.0f * (float)rpm);
-				if ( tmpNote.frequency != 0 )
-					channels[i].notes[row].active = true;
-				channels[i].notes[row].volume = tmpNote.volume;
-				channels[i].notes[row].note
-					= midiFrequencyToNote(tmpNote.frequency);
-				channels[i].lastRow = row;
-				row++;
-			}
-		} while ( tmpNote.time != 0 );
-	}
-
-	return true;
-}
-
 bool Tune::Save(const char * filename)
 {
 	char _filename[256];
@@ -207,15 +160,17 @@ bool Tune::Load(const char * filename)
 	FILE * f = fopen(_filename, "rb");
 
 	clear();
+	int framesPerRow = 1; 
 
 	if ( f == 0 ) {
+		fprintf(stderr, "tune: file not found %s\n", filename);
 		return false;
 	}
 
 	if ( fscanf(f, "%d\n", &rpm) != 1 )
 		goto error;
 	
-	int framesPerRow = iceilf(1.0f/((float)rpm/60.0f/(float)resolution));
+	framesPerRow = iceilf(1.0f/((float)rpm/60.0f/(float)resolution));
 	rpm = framesPerRow * 60;
 
 	for ( int i = 0 ; i < 8 ; i++ )
@@ -237,6 +192,49 @@ bool Tune::Load(const char * filename)
 
 error:
 	fclose(f);
+	return false;
+}
+
+const char* nextLine(const char* txt)
+{
+	while (*txt != 0 && *txt != '\n')
+		txt++;
+	if (*txt == '\n')
+		txt++; // eat \n
+	return txt;
+}
+
+bool Tune::LoadText(const char * txt)
+{
+	int framesPerRow = 0;
+	if ( sscanf(txt, "%d\n", &rpm) != 1 )
+		goto error;
+
+
+	txt = nextLine(txt);
+	
+	framesPerRow = iceilf(1.0f/((float)rpm/60.0f/(float)resolution));
+	rpm = framesPerRow * 60;
+
+	for ( int i = 0 ; i < 8 ; i++ ) {
+		if ( sscanf(txt, "%d %d\n", &(channels[i].duty), &(channels[i].dec)) != 2 )
+			goto error;
+		txt = nextLine(txt);
+	}
+
+	int c, r, v, n;
+	while ( *txt != 0 && sscanf(txt, "%d %d %d %d\n", &c, &r, &v, &n) == 4 ) {
+		channels[c].notes[r].volume = v;
+		channels[c].notes[r].note = n;
+		channels[c].notes[r].active = true;
+		if ( channels[c].lastRow < r )
+			channels[c].lastRow = r;
+		txt = nextLine(txt);
+	}
+
+	return true;
+
+error:
 	return false;
 }
 

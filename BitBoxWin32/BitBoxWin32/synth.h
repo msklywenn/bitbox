@@ -1,13 +1,11 @@
 #ifndef _SYNTH_H_
 #define _SYNTH_H_
 
-#include <portaudio.h>
-
 #include "tune.h"
 #include "psg.h"
 
 class Synth {
-	PaStream * stream;
+	bool audioReady;
 
 	Tune * tune;
 
@@ -20,7 +18,7 @@ class Synth {
 	Channel channels[8];
 	float dRes, dRow;
 	unsigned int row, initialRow;
-	PaTime latency;
+	int sampleSize;
 
 	void readRow();
 
@@ -55,6 +53,8 @@ public:
 	Tune * getTune() { return tune; }
 
 	bool waveOut(const char * filename);
+
+	const int SampleSize() const { return sampleSize; }
 };
 
 #endif // _SYNTH_H_

@@ -2,64 +2,54 @@
 
 #include <stdio.h>
 #include <string.h>
-#include <SDL.h>
 
 #include "midi.h"
 
-int SynthStreamCallback(const void * in, void * out, unsigned long frames,
-		const PaStreamCallbackTimeInfo * timeInfo, PaStreamCallbackFlags status,
-		void * user)
-{
-	Synth * synth = (Synth *) user;
-	synth->synth((signed short *) out, frames);
-	return 0;
-}
-
-Synth::Synth(Tune * tune)
-	: stream(0), tune(tune), dRes(0.0f), dRow(0.0f),
-	row(0), initialRow(0), latency(0.0), analyseBufferPosition(0)
-{
-	// Initialize PortAudio
-	PaError code;
-
-	code = Pa_Initialize();
-	if ( code != paNoError )
-		printf("PortAudio error : %s\n", Pa_GetErrorText(code));
-
-#ifdef _WINDOWS
-	// Find device with lowest latency
-	const PaDeviceInfo * deviceInfo;
-	PaDeviceIndex device = -1;
-	for ( PaDeviceIndex i = 0 ; i < Pa_GetDeviceCount() ; i++ ) {
-		deviceInfo = Pa_GetDeviceInfo(i);
-		if ( device == -1 ||
-			( deviceInfo->defaultLowOutputLatency < Pa_GetDeviceInfo(device)->defaultLowOutputLatency
-				&& deviceInfo->maxOutputChannels >= 2 ) )
-			device = i;
-	}
-	// Open device
-	PaStreamParameters param;
-	memset(& param, 0, sizeof(PaStreamParameters));
-	param.channelCount = 2;
-	param.device = device;
-	param.hostApiSpecificStreamInfo = 0;
-	param.sampleFormat = paInt16;
-	param.suggestedLatency = Pa_GetDeviceInfo(device)->defaultLowOutputLatency;
-	code = Pa_OpenStream(& stream, 0, & param, 44100.0, 512, paNoFlag, SynthStreamCallback, this);
-	if ( code != paNoError )
-		fprintf(stderr, "PortAudio error : %s\n", Pa_GetErrorText(code));
+#ifdef USE_SDL
+#include <SDL.h>
 #else
-	Pa_OpenDefaultStream(& stream, 0, 2, paInt16, 44100.0, 512,
-			SynthStreamCallback, this);
+#include <libdragon.h>
+Synth* synth;
 #endif
 
-	if ( ! stream )
-		fprintf(stderr, "Could not init PortAudio\n");
+#if defined(USE_SDL)
+void SynthStreamCallback(void* user, uint8_t* out, int len)
+{
+	Synth * synth = (Synth *) user;
+	int samples = len / synth->SampleSize(); // len is bytes, we have 16b stereo
+	synth->synth((signed short *) out, samples);
+}
+#else
+void SynthStreamCallback(short* buffer, size_t numsamples)
+{
+	synth->synth(buffer, numsamples);
+}
+#endif
 
-#ifdef _DEBUG
-	if ( stream )
-		latency = Pa_GetStreamInfo(stream)->outputLatency;
-	fprintf(stderr, "Device latency : %fs.\n", latency);
+Synth::Synth(Tune* tune)
+	: tune(tune), dRes(0.0f), dRow(0.0f), row(0), initialRow(0), analyseBufferPosition(0)
+{
+#if defined(USE_SDL)
+	SDL_AudioSpec wanted;
+	wanted.freq = 44100;
+	wanted.format = AUDIO_S16;
+	wanted.channels = 2;
+	wanted.samples = 1024;
+	wanted.callback = SynthStreamCallback;
+	wanted.userdata = this;
+
+	SDL_AudioSpec obtained;
+	audioReady = SDL_OpenAudio(&wanted, &obtained) == 0;
+	if (!audioReady) {
+		fprintf(stderr, "Couldn't open audio: %s\n", SDL_GetError());
+		return;
+	}
+
+	sampleSize = obtained.channels * (obtained.format & 0xFF) / 8;
+#else
+	::synth = this; // look ma, garbage code! ...I DON'T CARE!
+	audio_init(44100, 2);
+	audio_set_buffer_callback(SynthStreamCallback);
 #endif
 
 	// Initialize PSGs
@@ -77,10 +67,13 @@ Synth::Synth(Tune * tune)
 
 Synth::~Synth()
 {
-	if ( stream ) {
-		Pa_CloseStream(stream);
-		Pa_Terminate();
+#if defined(USE_SDL)
+	if ( audioReady ) {
+		SDL_CloseAudio();
 	}
+#else
+	audio_close();
+#endif
 }
 
 void Synth::readRow()
@@ -97,11 +90,11 @@ void Synth::readRow()
 	}
 }
 
-void Synth::synth(signed short * buffer, int samples, bool analyse)
+void Synth::synth(signed short* buffer, int samples, bool analyse)
 {
 	int left, right, s;
 
-	for ( int i = samples ; i > 0 ; i-- ) {
+	for (int i = samples ; i > 0 ; i--) {
 		// Playing
 		if ( row < MAXROWS && dRes > 1.0f/(float)tune->resolution ) {
 			dRow += 1.0f/((float)tune->resolution * 60.0f);
@@ -146,35 +139,49 @@ void Synth::synth(signed short * buffer, int samples, bool analyse)
 void Synth::play()
 {
 	initialRow = row;
-	if ( stream )
-		Pa_StartStream(stream);
+#if defined(USE_SDL)
+	if ( audioReady )
+		SDL_PauseAudio(0);
+#else
+	audio_pause(false);
+#endif
 }
 
 void Synth::pause()
 {
-	if ( stream && Pa_IsStreamActive(stream) )
-		stop();
-	else
-		play();
+	if ( audioReady )
+	{
+#ifdef USE_SDL
+		if (SDL_GetAudioStatus() == SDL_AUDIO_PLAYING)
+			SDL_PauseAudio(1);
+		else
+			SDL_PauseAudio(0);
+#endif
+	}
 }
 
 void Synth::stop(bool abort)
 {
-	if ( stream ) {
-		if ( abort )
-			Pa_AbortStream(stream);
+#ifdef USE_SDL
+	if ( audioReady ) {
+		if (abort)
+			SDL_CloseAudio();
 		else
-			Pa_StopStream(stream);
+			SDL_PauseAudio(1);
 	}
+#endif
 	reset();
-	row -= (unsigned int)(latency / 60.0f * tune->rpm);
 	if ( row < initialRow )
 		row = initialRow;
 }
 
 void Synth::setRow(int l)
 {
-	bool p = stream && Pa_IsStreamActive(stream);
+#ifdef USE_SDL
+	bool p = audioReady && SDL_GetAudioStatus() == SDL_AUDIO_PLAYING;
+#else
+	bool p = true;
+#endif
 
 	if ( p )
 		stop();
@@ -190,8 +197,13 @@ void Synth::setChannelDuty(int ch, int duty)
 
 unsigned int Synth::getCurrentRow()
 {
-	if ( stream && Pa_IsStreamActive(stream) ) {
-		int r = (int)(row - latency / 60.0f * tune->rpm);
+#ifdef USE_SDL
+	bool p = audioReady && SDL_GetAudioStatus() == SDL_AUDIO_PLAYING;
+#else
+	bool p = true;
+#endif
+	if (p) {
+		int r = row;
 		if ( r < (int) initialRow )
 			return initialRow;
 		return r;
