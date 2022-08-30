@@ -12,7 +12,7 @@ GUIClock::GUIClock(Tune * tune)
 bool GUIClock::process(SDL_Event * event)
 {
 	if ( event->type == SDL_USEREVENT && event->user.code == GUI_CURRENTROW ) {
-		int row = (int) event->user.data1;
+		int row = *(int*)&event->user.data1;
 		char str[6];
 		int minutes = row / tune->rpm;
 		int seconds = (row % tune->rpm) * 60 / tune->rpm;

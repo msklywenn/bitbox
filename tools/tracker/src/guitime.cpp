@@ -60,10 +60,10 @@ bool GUITime::process(SDL_Event * event)
 		up = true;
 	} else if ( event->type == SDL_USEREVENT ) {
 		if ( event->user.code == GUI_SETOFFSET ) {
-			offset = (int) event->user.data1;
+			offset = *(int*)&event->user.data1;
 			up = true;
 		} else if ( event->user.code == GUI_CURRENTROW ) {
-			row = (int) event->user.data1;
+			row = *(int*)&event->user.data1;
 			if ( row > offset+48 ) {
 				if ( row > offset+48*2 ) {
 					PushUserEvent(GUI_SETOFFSET, (void *) row);

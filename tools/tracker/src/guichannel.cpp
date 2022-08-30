@@ -272,11 +272,11 @@ bool GUIChannel::process(SDL_Event * event)
 			shift = false;
 	} else if ( event->type == SDL_USEREVENT ) {
 		if ( event->user.code == GUI_SETOFFSET ) {
-			offset = (int) event->user.data1;
+			offset = *(int*)&event->user.data1;
 			catched = true;
 		} else if ( event->user.code == GUI_SETCHANNEL ) {
-			int n = (int) event->user.data1;
-			int s = (int) event->user.data2;
+			int n = *(int*)&event->user.data1;
+			int s = *(int*)&event->user.data2;
 			if ( selectBegin >= 0 && selectEnd == selectBegin+1 ) {
 				if ( n != number ) {
 					selectBegin = -1;
