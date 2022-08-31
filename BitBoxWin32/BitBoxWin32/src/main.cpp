@@ -29,7 +29,13 @@ void InitVideo()
 	//glEnable(GL_POLYGON_SMOOTH);
 
 	glEnable(GL_BLEND);
+#ifdef N64
+	// N64 blender doesn't clamp so add blend looks like garbage
+	// fallback to regular alpha blend
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+#else
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+#endif
 
 	glEnable(GL_CULL_FACE);
 	glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
@@ -342,15 +348,15 @@ void sonic(int t)
 	glEnd();
 }
 
-void spot(int c1, int c2, int w, int h)
+void spot(int c1, int c2, int w, int h, float a = 1.0f)
 {
-	float c1r = RED(c1), c1g = GREEN(c1), c1b = BLUE(c1);
-	float c2r = RED(c2), c2g = GREEN(c2), c2b = BLUE(c2);
+	float c1r = RED(c1)/31.0f, c1g = GREEN(c1)/31.0f, c1b = BLUE(c1)/31.0f;
+	float c2r = RED(c2)/31.0f, c2g = GREEN(c2)/31.0f, c2b = BLUE(c2)/31.0f;
 	glBegin(GL_QUADS);
-		color(c1r, c1g, c1b);
+		glColor4f(c1r,c1g,c1b,a);
 		glVertex3f(-1.0f, h/64.0f, 0.0f);
 		glVertex3f(1.0f, h/64.0f, 0.0f);
-		color(c2r, c2g, c2b);
+		glColor4f(c2r,c2g,c2b,a);
 		glVertex3f(1.0f + w / 64.0f, 1.0f, 0.0f);
 		glVertex3f(-1.0f-w/64.0f, 1.0f, 0.0f);
 	glEnd();
@@ -490,8 +496,11 @@ void fs_beam(int t)
 		h = 0;
 	//GFX_POLY_FORMAT = LIGHT0|POLYFRONT|ALPHA(15);
 	glEnable(GL_BLEND);
-	glBlendFunc(GL_SRC_ALPHA, GL_ONE);
-	spot(RGB15(0, 31, 4), RGB15(0, 31, 4), -32, h-384);
+#ifdef N64
+	spot(RGB15(0, 31, 4), RGB15(0, 31, 4), -32, h-384,0.5f);
+#else
+	spot(RGB15(0, 31, 4), RGB15(0, 31, 4), -32, h-384,1.0f);
+#endif
 }
 
 typedef short s16;
@@ -521,7 +530,6 @@ void fullScreenQuad(float r, float g, float b, float a)
 {
 	glDisable(GL_DEPTH_TEST);
 	glEnable(GL_BLEND);
-	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 	glBegin(GL_QUAD_STRIP);
 	glColor4f(r,g,b,a);
 	glVertex3f(-1.0f,-20.0f, -0.5f);
@@ -665,7 +673,7 @@ int main(int argc, char ** argv)
 		gl_swap_buffers();
 
 		long long now = timer_ticks();
-		t = TIMER_MICROS_LL(now - start) / 1000 / 16; 
+		t = TIMER_MICROS_LL(now - start) / 1000 / 16+1000; 
 #else
 #error "platform unsupported"
 #endif
@@ -690,7 +698,13 @@ int main(int argc, char ** argv)
 #endif
 	}
 
-	printf("%lld\n",t);
+	// TODO: "end" message in the middle of the bottom screen
+	glClear(GL_COLOR_BUFFER_BIT);
+#ifdef USE_SDL
+	SDL_GL_SwapBuffers();
+#elif defined(N64)
+	gl_swap_buffers();
+#endif
 
 	delete synth;
 	delete tune;
