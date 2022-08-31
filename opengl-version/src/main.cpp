@@ -673,7 +673,7 @@ int main(int argc, char ** argv)
 		gl_swap_buffers();
 
 		long long now = timer_ticks();
-		t = TIMER_MICROS_LL(now - start) / 1000 / 16+1000; 
+		t = TIMER_MICROS_LL(now - start) / 1000 / 16; 
 #else
 #error "platform unsupported"
 #endif
