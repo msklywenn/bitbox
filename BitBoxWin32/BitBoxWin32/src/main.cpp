@@ -36,7 +36,6 @@ void InitVideo()
 	glCullFace(GL_BACK);
 
 	glMatrixMode(GL_PROJECTION);
-#if 0
 	float matrix[4*4] =
 	{
 		6587/4096.0f, 	0, 	0,	0,
@@ -45,9 +44,7 @@ void InitVideo()
 		0, 	0, 	-821/4096.0f,	0,
 	};
 	glLoadMatrixf(matrix);
-#else
-	glFrustum(-4.0f/3.0f,4.0f/3.0f,-1,1,2.1f,100);
-#endif
+
 	glMatrixMode(GL_MODELVIEW);
 	glLoadIdentity();
 
@@ -595,13 +592,15 @@ int main(int argc, char ** argv)
 	SDL_WM_SetCaption("BitBox - Winport", "BitBox - Winport");
 
 	SDL_Event event;
-#else
+#elif defined(N64)
 	debug_init_isviewer();
 	debug_init_usblog();
 	display_init(RESOLUTION_640x480, DEPTH_16_BPP, 1,
 			GAMMA_NONE, ANTIALIAS_RESAMPLE_FETCH_ALWAYS);
 	gl_init();
 	audio_init(44100, 4);
+#else
+#error "unsupported platform"
 #endif
 
 	InitVideo();
@@ -612,7 +611,7 @@ int main(int argc, char ** argv)
 	Synth* synth = new Synth(tune);
 	synth->play();	
 
-#ifndef USE_SDL
+#ifdef N64
 	while (audio_can_write())
 	{
 		short* buf = audio_write_begin();
@@ -623,16 +622,18 @@ int main(int argc, char ** argv)
 
 #ifdef USE_SDL
 	uint32_t start = SDL_GetTicks();
-#else
+#elif defined(N64)
 
 	timer_init();
 	long long start = timer_ticks();
+#else
+#error "unsupported platform"
 #endif
 
 	bool running = true;
 	long long t = 0;
 	while ( running ) {
-#if USE_SDL
+#ifdef USE_SDL
 		SDL_GL_SwapBuffers();
 
 		while ( SDL_PollEvent(& event) )
@@ -660,25 +661,25 @@ int main(int argc, char ** argv)
 		uint32_t now = SDL_GetTicks();
 
 		t = (now - start) / 16;
-#else
+#elif N64
 		gl_swap_buffers();
 
 		long long now = timer_ticks();
 		t = TIMER_MICROS_LL(now - start) / 1000 / 16; 
+#else
+#error "platform unsupported"
 #endif
 		glClear(GL_DEPTH_BUFFER_BIT);
 
-#ifndef USE_SDL
+#ifdef N64
 		long long b = timer_ticks();
 #endif
 		Render(t);
 		Render(t+1);
-#ifndef USE_SDL
+#ifdef N64
 		long long e = timer_ticks();
 		fprintf(stderr,"t=%4lld, r=%f ms\n",t,TIMER_MICROS_LL(e-b)/1000.0f);
-#endif
 
-#ifndef USE_SDL
 		while (audio_can_write())
 		{
 			short* buf = audio_write_begin();
@@ -694,7 +695,7 @@ int main(int argc, char ** argv)
 	delete synth;
 	delete tune;
 
-#if USE_SDL
+#ifdef USE_SDL
 	SDL_FreeSurface(screen);
 	SDL_Quit();
 #endif
