@@ -24,7 +24,7 @@ void InitVideo()
 	glClearDepth(1.0f);
 
 	glEnable(GL_DEPTH_TEST);
-	glDepthMask(GL_TRUE);
+	//glDepthMask(GL_TRUE);
 	
 	//glEnable(GL_POLYGON_SMOOTH);
 
@@ -34,8 +34,9 @@ void InitVideo()
 	glEnable(GL_CULL_FACE);
 	glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 	glCullFace(GL_BACK);
-	
+
 	glMatrixMode(GL_PROJECTION);
+#if 0
 	float matrix[4*4] =
 	{
 		6587/4096.0f, 	0, 	0,	0,
@@ -44,6 +45,9 @@ void InitVideo()
 		0, 	0, 	-821/4096.0f,	0,
 	};
 	glLoadMatrixf(matrix);
+#else
+	glFrustum(-4.0f/3.0f,4.0f/3.0f,-1,1,2.1f,100);
+#endif
 	glMatrixMode(GL_MODELVIEW);
 	glLoadIdentity();
 
@@ -54,7 +58,6 @@ void InitVideo()
 	glLightfv(GL_LIGHT0, GL_DIFFUSE, diffuse);
 	static float position[] = { 96/512.0f, 144/512.0f, 482/512.0f, 0.0f };
 	glLightfv(GL_LIGHT0, GL_POSITION, position);
-
 }
 
 int fade_current = 31 << 2; // starts white
@@ -572,7 +575,6 @@ void Render(int t)
 			fullScreenQuad(0,0,0,(16 - (fade_current >> 2))/16.0f);
 		else if ( fade_current > (16 << 2) )
 			fullScreenQuad(1,1,1,((fade_current >> 2) - 16)/16.0f);
-
 	}
 }
 
@@ -659,26 +661,30 @@ int main(int argc, char ** argv)
 
 		t = (now - start) / 16;
 #else
-		//gl_swap_buffers();
+		gl_swap_buffers();
 
 		long long now = timer_ticks();
 		t = TIMER_MICROS_LL(now - start) / 1000 / 16; 
 #endif
-	/*	glClear(GL_DEPTH_BUFFER_BIT|GL_COLOR_BUFFER_BIT);
+		glClear(GL_DEPTH_BUFFER_BIT);
 
+#ifndef USE_SDL
+		long long b = timer_ticks();
+#endif
 		Render(t);
 		Render(t+1);
-*/
+#ifndef USE_SDL
+		long long e = timer_ticks();
+		fprintf(stderr,"t=%4lld, r=%f ms\n",t,TIMER_MICROS_LL(e-b)/1000.0f);
+#endif
+
 #ifndef USE_SDL
 		while (audio_can_write())
 		{
-			long long s = timer_ticks();
 			short* buf = audio_write_begin();
 			int samples = audio_get_buffer_length();
 			synth->synth(buf, samples);
 			audio_write_end();
-			long long e = timer_ticks();
-			fprintf(stderr, "audio: %d samples in %f ms\n", samples, TIMER_MICROS_LL(e - s) / 1000.0f);
 		}
 #endif
 	}
