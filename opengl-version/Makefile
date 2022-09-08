@@ -1,7 +1,9 @@
 BUILD_DIR=build
 include $(N64_INST)/include/n64.mk
 
-src = $(wildcard src/*.c) $(wildcard src/*.cpp)
+N64_CFLAGS += -I n64
+
+src = $(wildcard src/*.c) $(wildcard src/*.cpp) $(wildcard n64/*.cpp)
 
 all: bitbox.z64
 

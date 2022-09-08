@@ -1,10 +1,4 @@
-#if defined(USE_SDL)
-#include <SDL.h>
-#else
-#include <libdragon.h>
-#include <GL/gl_integration.h>
-#endif
-
+#include "shared.h"
 #include <stdio.h>
 
 #include <GL/gl.h>
@@ -12,9 +6,6 @@
 
 #include "tune.h"
 #include "synth.h"
-
-#define WIDTH 640
-#define HEIGHT 480
 
 #include "plop.h"
 
@@ -29,12 +20,10 @@ void InitVideo()
 	//glEnable(GL_POLYGON_SMOOTH);
 
 	glEnable(GL_BLEND);
-#ifdef N64
-	// N64 blender doesn't clamp so add blend looks like garbage
-	// fallback to regular alpha blend
-	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-#else
+#if CAN_ADD_BLEND
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+#else
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 #endif
 
 	glEnable(GL_CULL_FACE);
@@ -496,10 +485,10 @@ void fs_beam(int t)
 		h = 0;
 	//GFX_POLY_FORMAT = LIGHT0|POLYFRONT|ALPHA(15);
 	glEnable(GL_BLEND);
-#ifdef N64
-	spot(RGB15(0, 31, 4), RGB15(0, 31, 4), -32, h-384,0.5f);
-#else
+#ifdef CAN_ADD_BLEND
 	spot(RGB15(0, 31, 4), RGB15(0, 31, 4), -32, h-384,1.0f);
+#else
+	spot(RGB15(0, 31, 4), RGB15(0, 31, 4), -32, h-384,0.5f);
 #endif
 }
 
@@ -523,8 +512,6 @@ Drawable demo[] =
 	{ background, 			0, 		2576, 	 9, -44, 	32 	},
 	{ fs_beam, 				1024, 	1536, 	18, -13, 	4 	},
 };
-
-int mouseX, mouseY;
 
 void fullScreenQuad(float r, float g, float b, float a)
 {
@@ -585,31 +572,7 @@ void Render(int t)
 
 int main(int argc, char ** argv)
 {
-#if defined(USE_SDL)
-	SDL_Init(SDL_INIT_EVERYTHING);
-
-	SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 16);
-	SDL_GL_SetAttribute(SDL_GL_RED_SIZE, 5);
-	SDL_GL_SetAttribute(SDL_GL_GREEN_SIZE, 5);
-	SDL_GL_SetAttribute(SDL_GL_BLUE_SIZE, 5);
-	SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
-	//SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, 1);
-	//SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS, 2);
-	SDL_Surface * screen = SDL_SetVideoMode(WIDTH, HEIGHT, 16,
-			SDL_DOUBLEBUF|SDL_HWSURFACE|SDL_OPENGL);
-	SDL_WM_SetCaption("BitBox - Winport", "BitBox - Winport");
-
-	SDL_Event event;
-#elif defined(N64)
-	debug_init_isviewer();
-	debug_init_usblog();
-	display_init(RESOLUTION_640x480, DEPTH_16_BPP, 1,
-			GAMMA_NONE, ANTIALIAS_RESAMPLE_FETCH_ALWAYS);
-	gl_init();
-	audio_init(44100, 4);
-#else
-#error "unsupported platform"
-#endif
+    void* platform = platform_start();
 
 	InitVideo();
 
@@ -619,100 +582,43 @@ int main(int argc, char ** argv)
 	Synth* synth = new Synth(tune);
 	synth->play();	
 
-#ifdef N64
-	while (audio_can_write())
-	{
-		short* buf = audio_write_begin();
-		synth->synth(buf, audio_get_buffer_length());
-		audio_write_end();
-	}
-#endif
+    platform_audio(synth);
 
-#ifdef USE_SDL
-	uint32_t start = SDL_GetTicks();
-#elif defined(N64)
-
-	timer_init();
-	long long start = timer_ticks();
-#else
-#error "unsupported platform"
-#endif
+	uint32_t start = platform_ticks();
 
 	bool running = true;
 	long long t = 0;
 	while ( running ) {
-#ifdef USE_SDL
-		SDL_GL_SwapBuffers();
+		long long b = platform_ticks();
+		running = platform_swap();
+		long long e = platform_ticks();
+        if ((e - b) > 1000) { fprintf(stderr,"  swap=%lld ms\n", e - b); }
 
-		while ( SDL_PollEvent(& event) )
-		{
-			switch ( event.type ) {
-				case SDL_MOUSEMOTION:
-					mouseX = event.motion.x;
-					mouseY = event.motion.y;
-					break;
-				case SDL_QUIT:
-					running = false;
-					break;
-				case SDL_VIDEORESIZE:
-				case SDL_VIDEOEXPOSE:
-					break;
-				case SDL_KEYDOWN:
-					if ( event.key.keysym.sym == SDLK_ESCAPE ) // Quit...
-						running = false;
-					break;
-				default:
-					break;
-			}
-		}
+		long long now = platform_ticks();
+		t = (now - start) / 16; 
 
-		uint32_t now = SDL_GetTicks();
-
-		t = (now - start) / 16;
-#elif N64
-		gl_swap_buffers();
-
-		long long now = timer_ticks();
-		t = TIMER_MICROS_LL(now - start) / 1000 / 16; 
-#else
-#error "platform unsupported"
-#endif
 		glClear(GL_DEPTH_BUFFER_BIT);
 
-#ifdef N64
-		long long b = timer_ticks();
-#endif
+		b = platform_ticks();
 		Render(t);
 		Render(t+1);
-#ifdef N64
-		long long e = timer_ticks();
-		fprintf(stderr,"t=%4lld, r=%f ms\n",t,TIMER_MICROS_LL(e-b)/1000.0f);
+		e = platform_ticks();
+        if ((e - b) > 1) { fprintf(stderr,"render=%lld ms (t=%4lld)\n", e - b, t); }
 
-		while (audio_can_write())
-		{
-			short* buf = audio_write_begin();
-			int samples = audio_get_buffer_length();
-			synth->synth(buf, samples);
-			audio_write_end();
-		}
-#endif
+		b = platform_ticks();
+        platform_audio(synth);
+		e = platform_ticks();
+        if ((e - b) > 1) { fprintf(stderr," audio=%lld ms\n", e - b); }
 	}
 
 	// TODO: "end" message in the middle of the bottom screen
 	glClear(GL_COLOR_BUFFER_BIT);
-#ifdef USE_SDL
-	SDL_GL_SwapBuffers();
-#elif defined(N64)
-	gl_swap_buffers();
-#endif
+    platform_swap();
 
 	delete synth;
 	delete tune;
 
-#ifdef USE_SDL
-	SDL_FreeSurface(screen);
-	SDL_Quit();
-#endif
+    platform_end(platform);
 
 	return 0;
 }
